@@ -1,0 +1,14 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const root = path.join(__dirname, '..');
+const temp = path.join(root, '.build-temp');
+const cache = path.join(root, '.cache');
+for (const directory of [temp, cache]) fs.mkdirSync(directory, { recursive: true });
+process.env.TEMP = temp;
+process.env.TMP = temp;
+process.env.TMPDIR = temp;
+process.env.npm_config_cache = path.join(cache, 'npm');
+process.env.ELECTRON_CACHE = path.join(cache, 'electron');
+process.env.ELECTRON_BUILDER_CACHE = path.join(cache, 'electron-builder');
+process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(cache, 'ms-playwright');
+module.exports = { root, temp, cache };

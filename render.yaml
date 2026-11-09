@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: together-room-server
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: BIND_HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 4317

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111412">
+  <meta name="description" content="Your screen. Your people. A private room for watching and talking together.">
+  <title>Together — Watch something. Be together.</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Together home"><img src="/icon.svg" alt="" width="34" height="34"><span>together<span class="brand-dot">.</span></span></a>
+      <div class="topbar-right"><span class="platform-badge" id="platform-label">WATCH & CONNECT</span><span class="connection-pill" id="connection-status">Offline</span></div>
+    </header>
+
+    <main class="workspace">
+      <section class="watch-column" aria-label="Watch room">
+        <div class="section-heading">
+          <div><p class="eyebrow">A LITTLE CLOSER, FROM ANYWHERE</p><h1 id="room-title">Good company. Great screen.</h1></div>
+          <span class="room-label"><span class="quiet-dot"></span> Your private cinema</span>
+        </div>
+
+        <div class="stage-frame">
+          <div class="stage" id="stage">
+            <video id="screen-video" autoplay playsinline aria-label="Shared screen"></video>
+            <div class="stage-empty" id="stage-empty">
+              <div class="screen-illustration" aria-hidden="true"><div class="screen-orbit orbit-one"></div><div class="screen-orbit orbit-two"></div><div class="screen-shape"><span class="play-shape"></span></div><span class="spark spark-one">✦</span><span class="spark spark-two">✦</span></div>
+              <span class="empty-kicker">MAKE SOME ROOM FOR EACH OTHER</span>
+              <h2>The best seat is together.</h2>
+              <p>Create a room, share your screen, and bring your people. <br>Movies, videos, games — a little more connected.</p>
+              <div class="empty-features"><span>Screen + sound</span><i></i><span>Face to face</span><i></i><span>Up to 240 FPS target</span></div>
+            </div>
+            <span id="stage-caption" class="stage-caption">A little closer, wherever you are</span>
+            <button id="enable-audio" class="enable-audio" type="button" hidden>Click to hear the stream</button>
+            <button id="fullscreen" class="fullscreen-button" type="button" aria-label="Enter full screen" title="Full screen"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          </div>
+          <div class="stream-stats" aria-label="Measured stream statistics">
+            <div class="stats-intro"><span class="stats-dot"></span><span>STREAM HEALTH</span></div>
+            <div class="stat"><strong id="stat-fps">—</strong><span>frame rate</span></div>
+            <div class="stat"><strong id="stat-bitrate">—</strong><span>bitrate</span></div>
+            <div class="stat"><strong id="stat-latency">—</strong><span>round trip</span></div>
+            <div class="stat"><strong id="stat-resolution">—</strong><span id="resolution-kind">capture resolution</span></div>
+            <span class="target-pill" id="stat-target">120 FPS target</span>
+          </div>
+        </div>
+
+        <p id="video-health" class="video-health" role="status">Video measurements appear after a viewer connects.</p>
+        <details class="media-details"><summary>Video and connection details</summary><pre id="media-diagnostics">No active media connection.</pre></details>
+        <div class="call-toolbar" aria-label="Sharing and call controls">
+          <div class="call-controls"><button id="toggle-mic" class="control-button" type="button" disabled aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z" stroke="currentColor" stroke-width="1.7"/><path d="M6 11v1a6 6 0 0 0 12 0v-1m-6 7v3m-3 0h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><span>Microphone off</span></button><button id="toggle-camera" class="control-button" type="button" disabled aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="6" width="12" height="12" rx="3" stroke="currentColor" stroke-width="1.7"/><path d="m15 10 6-3v10l-6-3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Camera off</span></button></div>
+          <button id="share-screen" class="button button-accent" type="button" disabled><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 21h8m-4-4v4m0-8V7m-3 3 3-3 3 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>Share screen</button>
+        </div>
+        <p id="status" class="status-message" role="status" aria-live="polite">Create a room or enter a meeting code to get together.</p>
+
+        <section class="people-section" aria-label="People in the room">
+          <div class="subheading"><h2>Your people <span id="member-count">0</span></h2><span>Camera and microphone are always your choice.</span></div>
+          <div id="participants" class="participants"><div class="people-empty"><span class="person-outline" aria-hidden="true">◌</span><p>A familiar face makes all the difference.<br><span>Your room members will appear here.</span></p></div></div>
+        </section>
+
+        <footer class="workspace-footer"><span><span class="quiet-dot"></span> Direct, encrypted media with WebRTC</span><span>Made for small groups. Built for good company.</span></footer>
+      </section>
+
+      <aside class="sidebar" aria-label="Room settings and conversation">
+        <section class="panel room-panel">
+          <div class="panel-heading"><span class="panel-icon" aria-hidden="true">↗</span><h2>A room of your own</h2><span class="small-label">01</span></div>
+          <div id="room-entry">
+            <div id="invitation-panel" class="invitation-panel" hidden><strong id="invitation-title">Join this room</strong><p id="invitation-server" class="field-hint"></p><button id="open-in-app" class="button button-accent full-width" type="button">Open in Together app</button><p id="app-link-note" class="field-hint">Run the latest Together EXE once on this PC first. Your browser may ask permission to open the app. You can also enter your name and join this exact room below.</p><button id="clear-invitation" class="leave-button" type="button">Use a different room</button></div>
+            <label class="field-label" for="display-name">YOUR NAME</label><input id="display-name" type="text" maxlength="40" autocomplete="nickname" placeholder="What should we call you?" value="" required>
+            <button id="create-room" class="button button-light full-width" type="button">Create a room <span aria-hidden="true">↗</span></button>
+            <div class="or-divider"><span>or join your people</span></div>
+            <label class="field-label" for="meeting-code">MEETING CODE</label><div class="join-row"><input id="meeting-code" type="text" placeholder="Paste a meeting code or invite link" autocomplete="off" spellcheck="false" aria-describedby="code-hint"><button id="join-room" class="button button-muted" type="button">Join</button></div><p class="field-hint" id="code-hint">A code includes the room address. Both devices need access to that server.</p>
+          </div>
+          <div id="room-active" hidden><span class="field-label">YOUR MEETING CODE</span><output id="room-code" class="room-code"></output><div class="invite-actions"><button id="copy-code" class="button button-light" type="button">Copy code</button><button id="copy-link" class="button button-muted" type="button">Copy invite link</button></div><p class="field-hint">Share privately with the people you want in your room.</p><button id="leave-room" class="leave-button" type="button">Leave room</button></div>
+          <button id="copy-app-link" class="button button-muted full-width" type="button" hidden>Copy direct app link</button>
+          <div class="network-panel"><strong id="reachability-badge">Local network only</strong><p id="reachability-note" class="field-hint">A 192.168… code works on the same local network. Friends elsewhere need an internet address.</p><button id="start-internet" class="button button-muted full-width" type="button" hidden>Start internet room · free</button><button id="stop-internet" class="leave-button" type="button" hidden>Stop public address</button><small id="internet-note" class="field-hint" hidden>Your PC stays the server. Cloudflare provides a temporary public address; keep Together open. Strict networks may still need TURN.</small></div>
+        </section>
+
+        <section class="panel quality-panel">
+          <div class="panel-heading"><span class="panel-icon" aria-hidden="true">≋</span><h2>Make it smooth</h2><span class="small-label">02</span></div>
+          <div class="settings-grid"><div><label class="field-label" for="fps">FRAME RATE</label><select id="fps"><option value="60">60 FPS</option><option value="120" selected>120 FPS</option><option value="144">144 FPS</option><option value="165">165 FPS</option><option value="240">240 FPS</option></select></div><div><label class="field-label" for="resolution">RESOLUTION</label><select id="resolution"><option value="720">720p</option><option value="1080" selected>1080p</option><option value="1440">1440p</option><option value="2160">4K · 2160p</option></select></div><div><label class="field-label" for="bitrate">BITRATE LIMIT</label><select id="bitrate"><option value="8">8 Mbps</option><option value="16">16 Mbps</option><option value="25" selected>25 Mbps</option><option value="40">40 Mbps</option><option value="60">60 Mbps</option></select></div><div><label class="field-label" for="codec">VIDEO CODEC</label><select id="codec"><option value="auto" selected>Automatic</option><option value="video/VP9">VP9</option><option value="video/H264">H.264</option><option value="video/AV1">AV1</option></select></div></div>
+          <label class="checkbox-label"><input id="system-audio" type="checkbox" checked><span>Share computer sound<small>Desktop mode captures all system audio.</small></span></label>
+          <p class="settings-note" id="settings-note">120 FPS is the requested target. Actual FPS depends on your display, hardware, source, and connection. Live stats show measured performance.</p>
+          <div id="quality-summary" class="quality-summary" role="status" aria-live="polite">Choose a source to see its actual capture quality.</div>
+          <label class="field-label" for="feedback-mode">DEVICE CONFIRMATION SOUNDS</label><select id="feedback-mode"><option value="voice" selected>Voice + tones</option><option value="tones">Tones only</option><option value="off">Off</option></select>
+          <details class="connection-details"><summary>Connection & internet setup <span aria-hidden="true">+</span></summary><label class="field-label" for="server-url">SIGNALING SERVER URL</label><input id="server-url" type="url" placeholder="http://localhost:4317" autocomplete="url" spellcheck="false"><p class="field-hint">The built-in server works on your local network. Internet rooms need a reachable signaling server; strict networks also need TURN. Use the same server to join by code.</p></details>
+        </section>
+
+        <section class="panel chat-panel"><div class="panel-heading"><span class="panel-icon" aria-hidden="true">☷</span><h2>The conversation</h2><span class="chat-label">ROOM CHAT</span></div><div id="messages" class="messages" role="log" aria-live="polite"><p class="chat-empty">A running commentary is half the fun.<br><span>Say hello when your room is ready.</span></p></div><form id="chat-form" class="chat-form"><label class="sr-only" for="chat-input">Message the room</label><input id="chat-input" type="text" placeholder="Message the room…" maxlength="2000" autocomplete="off" disabled><button class="chat-send" type="submit" aria-label="Send message" title="Send message"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m4 11 16-7-7 16-2-7-7-2Zm7 2 9-9" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></svg></button></form></section>
+        <p class="drm-note">Some protected video, including Netflix, may appear black because of DRM. Together respects those protections.</p>
+      </aside>
+    </main>
+  </div>
+  <dialog id="source-dialog" class="source-dialog"><div class="dialog-heading"><div><p class="eyebrow">YOU CHOOSE WHAT TO SHARE</p><h2>Share your entire screen or one window.</h2></div><button id="cancel-source" class="button button-muted" type="button">Cancel</button></div><div class="source-tabs" role="tablist" aria-label="What to share"><button id="source-screen-tab" class="button button-light" role="tab" aria-selected="true" type="button">Entire screen · all apps</button><button id="source-window-tab" class="button button-muted" role="tab" aria-selected="false" type="button">One application window</button></div><p id="source-description" class="dialog-description">Entire screen shares every app, browser, and window visible on the monitor you choose.</p><div id="source-list" class="source-list"></div></dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
