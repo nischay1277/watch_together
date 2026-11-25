@@ -15,3 +15,10 @@ test('app links reject commands, non-web servers, credentials, and malformed roo
     'together-watch://join?server=https://example.com/path&code=ABCDEFGH-AbCd1234_--x',
     'together-watch://join?server=https://example.com&code=wrong']) assert.equal(parseInvitation(value), null);
 });
+
+test('first-time app invitations carry an official network invite but never accept a substituted website', () => {
+  const link = new URL('together-watch://join?server=http%3A%2F%2F100.64.0.9%3A4317&code=ABCDEFGH-AbCd1234_--x');
+  link.searchParams.set('network', 'https://login.tailscale.com/uinv/test-only');
+  assert.equal(parseInvitation(link.href).network, 'https://login.tailscale.com/uinv/test-only');
+  link.searchParams.set('network', 'https://evil.example/invite'); assert.equal(parseInvitation(link.href), null);
+});

@@ -1,16 +1,28 @@
-const { app, BrowserWindow, ipcMain, desktopCapturer, session, clipboard, dialog, Menu, powerSaveBlocker, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, desktopCapturer, session, clipboard, dialog, Menu, powerSaveBlocker, screen, shell, net } = require('electron');
 const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
 const { createTogetherServer } = require('../server.cjs');
 const { InternetTunnel } = require('./internet.cjs');
 const { PROTOCOL, parseInvitation } = require('./deep-link.cjs');
+const { privateNetworkOrigin } = require('./private-network.cjs');
+const { createNetworkHelper, findTailscale } = require('./network-helper.cjs');
+const { createNetworkInstaller, fetchLimited } = require('./network-install.cjs');
+const { createPartyStore, startStableServer } = require('./party-store.cjs');
 
 const portableRoot = process.env.PORTABLE_EXECUTABLE_DIR || (app.isPackaged ? path.dirname(process.execPath) : path.join(__dirname, '..'));
 const dataRoot = process.env.TOGETHER_TEST === '1'
   ? path.join(portableRoot, 'Together-data', 'Tests', /^[a-zA-Z0-9_-]{1,80}$/.test(process.env.TOGETHER_TEST_PROFILE || '') ? process.env.TOGETHER_TEST_PROFILE : String(process.pid))
   : path.join(portableRoot, 'Together-data');
 for (const folder of ['Profile', 'Browser', 'Temp', 'Crashes', 'Logs']) fs.mkdirSync(path.join(dataRoot, folder), { recursive: true });
+const parties = createPartyStore(path.join(dataRoot, 'saved-parties.json'));
+const findNetwork = () => {
+  const bundled = path.join(dataRoot, 'Network', 'Tailscale', 'tailscale.exe');
+  return fs.existsSync(bundled) ? bundled : findTailscale();
+};
+const network = createNetworkHelper({ find: findNetwork, openExternal: url => shell.openExternal(url) });
+const networkInstaller = createNetworkInstaller({ dataRoot, installed: findNetwork,
+  download: (url, limit) => fetchLimited(url, limit, (url, options) => net.fetch(url, options)) });
 process.env.TEMP = path.join(dataRoot, 'Temp');
 process.env.TMP = path.join(dataRoot, 'Temp');
 app.setPath('userData', path.join(dataRoot, 'Profile'));
@@ -22,7 +34,7 @@ app.setAppLogsPath(path.join(dataRoot, 'Logs'));
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 let win, service, origin, pendingSource, cachedSources, sleepBlocker, tunnel, quitting = false;
 let pendingInvitation = process.argv.map(parseInvitation).find(Boolean) || null;
-let protocolRegistered = false;
+let protocolRegistered = false, serverPortChanged = false;
 function receiveInvitation(invitation) {
   if (!invitation) return;
   pendingInvitation = invitation;
@@ -57,7 +69,10 @@ async function start() {
     protocolRegistered = app.setAsDefaultProtocolClient(PROTOCOL, process.env.PORTABLE_EXECUTABLE_FILE || process.execPath, []);
   }
   // Each app can host a LAN room; use a remote signaling URL in the UI for internet rooms.
-  service = await createTogetherServer({ host: '0.0.0.0', port: 0 });
+  const started = await startStableServer({ dataRoot, createServer: createTogetherServer,
+    options: { host: '0.0.0.0', partyStorePath: path.join(dataRoot, 'parties-server.json') } });
+  service = started.service;
+  serverPortChanged = started.portChanged;
   origin = `http://127.0.0.1:${service.port}`;
   const address = Object.values(os.networkInterfaces()).flat().find(n => n && n.family === 'IPv4' && !n.internal && !n.address.startsWith('169.254.'));
   const lanOrigin = address ? `http://${address.address}:${service.port}` : origin;
@@ -103,8 +118,19 @@ async function start() {
   });
   ipcMain.handle('together:info', event => {
     trusted(event);
-    return { version: app.getVersion(), platform: process.platform, lanOrigin, localOrigin: origin, internet: tunnel.state, dataRoot, invitation: pendingInvitation, protocolRegistered };
+    return { version: app.getVersion(), platform: process.platform, lanOrigin, localOrigin: origin, privateOrigin: privateNetworkOrigin(os.networkInterfaces(), service.port), internet: tunnel.state, dataRoot, invitation: pendingInvitation, protocolRegistered, serverPortChanged };
   });
+  ipcMain.handle('together:network-status', async event => { trusted(event); return { ...await network.status(), setup: networkInstaller.status() }; });
+  ipcMain.handle('together:network-connect', event => { trusted(event); return network.connect(); });
+  ipcMain.handle('together:network-help', event => { trusted(event); return network.help(); });
+  ipcMain.handle('together:network-install', event => { trusted(event); return networkInstaller.install(); });
+  ipcMain.handle('together:network-accept-invite', (event, url) => { trusted(event); return network.acceptInvite(url); });
+  ipcMain.handle('together:network-profiles', event => { trusted(event); return network.profiles(); });
+  ipcMain.handle('together:network-switch', (event, id) => { trusted(event); return network.switchProfile(id); });
+  ipcMain.handle('together:network-add-profile', event => { trusted(event); return network.addProfile(); });
+  ipcMain.handle('together:parties', event => { trusted(event); return parties.list(); });
+  ipcMain.handle('together:save-party', (event, value) => { trusted(event); return parties.save(value); });
+  ipcMain.handle('together:remove-party', (event, id) => { trusted(event); return parties.remove(id); });
   ipcMain.handle('together:sources', async event => {
     trusted(event);
     const available = (await sources()).filter(s => !s.name.startsWith('Together'));

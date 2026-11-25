@@ -1,6 +1,6 @@
 {
   "name": "together-desktop",
-  "version": "1.1.2",
+  "version": "1.4.0",
   "private": true,
   "description": "Watch a shared screen and talk together, with high frame rate targets and real WebRTC telemetry.",
   "main": "desktop/main.cjs",
@@ -9,13 +9,15 @@
   "scripts": {
     "start": "node --require ./tools/task-env.cjs node_modules/electron/cli.js .",
     "server": "node server.cjs",
-    "test": "node --require ./tools/task-env.cjs --test test/*.test.cjs",
+    "test": "node tools/test.cjs",
     "test:ui": "node tools/playwright.cjs test",
     "install:browsers": "node tools/playwright.cjs install chromium",
     "build": "node tools/build-windows.cjs",
     "build:unpacked": "node tools/build-windows.cjs --unpacked"
   },
-  "dependencies": { "ws": "8.22.1" },
+  "dependencies": {
+    "ws": "8.22.1"
+  },
   "devDependencies": {
     "@playwright/test": "1.65.0",
     "electron": "45.2.3",
@@ -25,10 +27,33 @@
     "appId": "app.together.desktop",
     "productName": "Together",
     "asar": true,
-    "directories": { "output": "release" },
-    "files": ["desktop/**/*", "public/**/*", "server.cjs", "package.json", "assets/**/*"],
-    "extraResources": [{ "from": "vendor/cloudflared.exe", "to": "cloudflared.exe" }, { "from": "vendor/CLOUDFLARED-LICENSE", "to": "CLOUDFLARED-LICENSE" }],
-    "win": { "target": "portable", "icon": "assets/icon.ico", "signExecutable": false },
-    "portable": { "artifactName": "Together-${version}-Windows.exe" }
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "desktop/**/*",
+      "public/**/*",
+      "server.cjs",
+      "package.json",
+      "assets/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor/cloudflared.exe",
+        "to": "cloudflared.exe"
+      },
+      {
+        "from": "vendor/CLOUDFLARED-LICENSE",
+        "to": "CLOUDFLARED-LICENSE"
+      }
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "assets/icon.ico",
+      "signExecutable": false
+    },
+    "portable": {
+      "artifactName": "Together-${version}-Windows.exe"
+    }
   }
 }

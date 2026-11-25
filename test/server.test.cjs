@@ -98,6 +98,8 @@ test('meeting code joins one room; chat and mesh signaling identify the authenti
   assert.equal(offer.description.sdp, 'test offer');
   guest.send({ type: 'signal', to: created.selfId, candidate: { candidate: 'candidate:test', sdpMid: '0', sdpMLineIndex: 0 } });
   assert.equal((await host.next('signal')).candidate.candidate, 'candidate:test');
+  guest.send({ type: 'media-retry', to: created.selfId, from: 'forged' });
+  assert.equal((await host.next('media-retry')).from, joined.selfId);
 });
 
 test('invalid codes, malformed messages, and cross-room signaling are rejected', async (t) => {
@@ -120,7 +122,7 @@ test('invalid codes, malformed messages, and cross-room signaling are rejected',
   assert.equal((await first.next('error')).code, 'BAD_CHAT');
 });
 
-test('guest cameras and microphones are allowed; screen sharing remains host-only', async (t) => {
+test('guests can share screen/audio; a second sharer is rejected until the current sharer stops', async (t) => {
   const app = await setup(t);
   const host = await app.connect();
   host.send({ type: 'create', name: 'Host' });
@@ -134,13 +136,38 @@ test('guest cameras and microphones are allowed; screen sharing remains host-onl
   assert.equal(roster.members.find((person) => person.id === joined.selfId).media.microphone, true);
   await guest.next('members', (message) => message.members.some((person) => person.id === joined.selfId && person.media.camera));
   guest.send({ type: 'media', media: { screen: true, systemAudio: true } });
-  assert.equal((await guest.next('error')).code, 'HOST_ONLY');
+  const guestSharing = await host.next('members', message => message.members.some(person => person.id === joined.selfId && person.media.screen));
+  assert.equal(guestSharing.members.find(person => person.id === joined.selfId).media.systemAudio, true);
+  host.send({ type: 'media', media: { screen: true, systemAudio: true } });
+  assert.equal((await host.next('error')).code, 'SCREEN_BUSY');
+  guest.send({ type: 'media', media: { screen: false } });
+  await host.next('members', message => message.members.every(person => !person.media.screen));
   host.send({ type: 'media', media: { screen: true, systemAudio: true } });
   const sharing = await guest.next('members', (message) => message.members.some((person) => person.id === created.selfId && person.media.screen));
   assert.equal(sharing.members.find((person) => person.id === created.selfId).media.systemAudio, true);
   host.send({ type: 'media', media: { screen: false } });
   const stopped = await guest.next('members', (message) => message.members.some((person) => person.id === created.selfId && !person.media.screen && !person.media.systemAudio));
   assert.equal(stopped.hostId, created.selfId);
+});
+
+test('simultaneous screen claims have one owner, and a guest leaving frees the screen', async t => {
+  const app = await setup(t); const host = await app.connect();
+  host.send({ type: 'create', name: 'Host' }); const room = await host.next('welcome');
+  const first = await app.connect(); first.send({ type: 'join', code: room.code, name: 'First' }); const one = await first.next('welcome');
+  const second = await app.connect(); second.send({ type: 'join', code: room.code, name: 'Second' }); const two = await second.next('welcome');
+  first.send({ type: 'screen-claim', requestId: 'first', systemAudio: true });
+  second.send({ type: 'screen-claim', requestId: 'second' });
+  const a = await first.next('screen-claim-result'); const b = await second.next('screen-claim-result');
+  assert.equal(Number(a.accepted) + Number(b.accepted), 1);
+  const winner = a.accepted ? first : second;
+  const loser = a.accepted ? second : first;
+  const winnerId = a.accepted ? one.selfId : two.selfId;
+  winner.ws.close();
+  await loser.next('members', message => message.members.every(person => !person.media.screen && person.id !== winnerId) && message.members.length === 2);
+  loser.send({ type: 'screen-claim', requestId: 'retry' });
+  assert.equal((await loser.next('screen-claim-result')).accepted, true);
+  loser.send({ type: 'screen-release' });
+  await host.next('members', message => message.members.length === 2 && message.members.every(person => !person.media.screen));
 });
 
 test('room capacity is enforced; leaving frees capacity; host exit ends the room', async (t) => {

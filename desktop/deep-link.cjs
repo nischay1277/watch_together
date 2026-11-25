@@ -1,4 +1,5 @@
 const PROTOCOL = 'together-watch';
+const { safeNetworkInvite } = require('./network-helper.cjs');
 function parseInvitation(value) {
   if (typeof value !== 'string' || value.length > 4096) return null;
   try {
@@ -8,7 +9,9 @@ function parseInvitation(value) {
     if (!/^[A-Z2-7]{8}-[A-Za-z0-9_-]{12}$/i.test(code || '')) return null;
     const server = new URL(link.searchParams.get('server'));
     if (!['http:', 'https:'].includes(server.protocol) || server.username || server.password || server.pathname !== '/' || server.search || server.hash) return null;
-    return { server: server.origin, code: code.slice(0, 8).toUpperCase() + code.slice(8) };
+    const network = link.searchParams.get('network');
+    if (network && !safeNetworkInvite(network)) return null;
+    return { server: server.origin, code: code.slice(0, 8).toUpperCase() + code.slice(8), ...(network ? { network } : {}) };
   } catch { return null; }
 }
 module.exports = { PROTOCOL, parseInvitation };

@@ -3,6 +3,7 @@
 const http = require('node:http');
 const path = require('node:path');
 const fs = require('node:fs/promises');
+const fsSync = require('node:fs');
 const crypto = require('node:crypto');
 const { WebSocketServer, WebSocket } = require('ws');
 
@@ -13,6 +14,7 @@ const STATIC_FILES = new Map([
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/engine.js', ['engine.js', 'text/javascript; charset=utf-8']],
   ['/feedback.js', ['feedback.js', 'text/javascript; charset=utf-8']],
+  ['/network-setup.js', ['network-setup.js', 'text/javascript; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
   ['/icon.svg', ['icon.svg', 'image/svg+xml']],
 ]);
@@ -95,7 +97,39 @@ function cleanSignal(message) {
   return Object.keys(clean).length ? clean : null;
 }
 
-/** A small, memory-only room/signaling server. Media is sent directly over WebRTC. */
+const MAX_PARTIES = 100;
+function partyTitle(value) {
+  return (typeof value === 'string' ? value : 'Friends party')
+    .replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 60) || 'Friends party';
+}
+
+function loadParties(filename) {
+  if (!filename) return [];
+  let text;
+  try {
+    if (fsSync.statSync(filename).size > 100000) throw new Error('Party file is too large.');
+    text = fsSync.readFileSync(filename, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw new Error('Saved parties could not be read. Keep the existing party file and restore a valid backup.');
+  }
+  try {
+    const data = JSON.parse(text);
+    if (data.version !== 1 || !Array.isArray(data.parties) || data.parties.length > MAX_PARTIES) throw new Error();
+    const ids = new Set();
+    return data.parties.map(party => {
+      const code = normaliseCode(party?.code);
+      if (!code || ids.has(code.slice(0, 8)) || typeof party.title !== 'string'
+        || party.title !== partyTitle(party.title) || !Number.isFinite(party.createdAt)) throw new Error();
+      ids.add(code.slice(0, 8));
+      return { code, title: party.title, createdAt: party.createdAt };
+    });
+  } catch {
+    throw new Error('Saved parties are damaged. Keep the existing party file and restore a valid backup; party codes were not replaced.');
+  }
+}
+
+/** Room signaling with optional persisted parties. Media is sent directly over WebRTC. */
 async function createTogetherServer(options = {}) {
   const host = options.host ?? process.env.BIND_HOST ?? '0.0.0.0';
   const port = options.port ?? Number(process.env.PORT || 4317);
@@ -105,6 +139,24 @@ async function createTogetherServer(options = {}) {
   const configuredOrigins = new Set(additionalOrigins);
   if (publicUrl) additionalOrigins.add(publicUrl);
   const rooms = new Map();
+  const partyStorePath = options.partyStorePath;
+  for (const party of loadParties(partyStorePath)) {
+    const id = party.code.slice(0, 8);
+    rooms.set(id, { ...party, id, persistent: true, hostId: null, members: new Map() });
+  }
+  function persistParty(party) {
+    if (!partyStorePath) return;
+    const parties = [...rooms.values()].filter(room => room.persistent).concat(party)
+      .map(({ code, title, createdAt }) => ({ code, title, createdAt }));
+    const temporary = `${partyStorePath}.${crypto.randomUUID()}.tmp`;
+    try {
+      fsSync.mkdirSync(path.dirname(partyStorePath), { recursive: true });
+      fsSync.writeFileSync(temporary, JSON.stringify({ version: 1, parties }), { mode: 0o600, flag: 'wx' });
+      fsSync.renameSync(temporary, partyStorePath);
+    } finally {
+      try { fsSync.unlinkSync(temporary); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
+  }
   const perIp = new Map();
   const publicDirectory = path.join(__dirname, 'public');
   let shuttingDown = false;
@@ -197,16 +249,26 @@ async function createTogetherServer(options = {}) {
     send(member.ws, {
       type: 'welcome', selfId: member.id, hostId: member.room.hostId,
       role: member.role, code: member.room.code, members: membersOf(member.room), iceServers: iceFor(member.id),
+      persistent: member.room.persistent === true, title: member.room.title || null,
     });
   }
   function removeMember(member) {
     const room = member?.room;
     if (!room || !room.members.has(member.id)) return;
+    clearTimeout(member.shareLease);
     room.members.delete(member.id);
     member.room = null;
-    if (member.role === 'host') {
+    if (room.persistent) {
+      if (member.id === room.hostId) {
+        const next = room.members.values().next().value;
+        room.hostId = next?.id || null;
+        if (next) next.role = 'host';
+      }
+      if (!shuttingDown) roster(room);
+    } else if (member.role === 'host') {
       rooms.delete(room.id);
       for (const other of room.members.values()) {
+        clearTimeout(other.shareLease);
         send(other.ws, { type: 'room-ended' });
         other.room = null;
         other.ws.close(1000, 'Host ended the room');
@@ -234,16 +296,40 @@ async function createTogetherServer(options = {}) {
       if (!message || typeof message !== 'object' || Array.isArray(message) || typeof message.type !== 'string') {
         fail(ws, 'BAD_MESSAGE', 'Invalid message.'); return;
       }
-      if (message.type === 'create' || message.type === 'join') {
+      if (message.type === 'party-status') {
+        if (typeof message.requestId !== 'string' || message.requestId.length > 80) {
+          fail(ws, 'BAD_MESSAGE', 'Invalid party status request.'); return;
+        }
+        const code = normaliseCode(message.code);
+        const party = code ? rooms.get(code.slice(0, 8)) : null;
+        if (!party?.persistent || !crypto.timingSafeEqual(Buffer.from(code), Buffer.from(party.code))) {
+          send(ws, { type: 'party-status', requestId: message.requestId, exists: false });
+          if (++failedJoins >= 12) ws.close(1008, 'Too many invalid codes');
+          return;
+        }
+        send(ws, { type: 'party-status', requestId: message.requestId, code: party.code, exists: true,
+          persistent: true, title: party.title, members: membersOf(party), maxMembers,
+          presenterId: [...party.members.values()].find(person => person.media.screen)?.id || null });
+        return;
+      }
+      if (message.type === 'create' || message.type === 'create-party' || message.type === 'join') {
         if (member?.room) { fail(ws, 'ALREADY_JOINED', 'Leave the current room first.'); return; }
         let room;
         let role = 'guest';
-        if (message.type === 'create') {
+        if (message.type === 'create' || message.type === 'create-party') {
           if (rooms.size >= 500) { fail(ws, 'SERVER_FULL', 'The server is full. Try again later.'); return; }
+          if (message.type === 'create-party' && [...rooms.values()].filter(room => room.persistent).length >= MAX_PARTIES) {
+            fail(ws, 'PARTY_LIMIT', `This server can save up to ${MAX_PARTIES} parties.`); return;
+          }
           let id;
           do { id = makeRoomId(); } while (rooms.has(id));
           const code = `${id}-${crypto.randomBytes(9).toString('base64url')}`;
           room = { id, code, hostId: crypto.randomUUID(), members: new Map() };
+          if (message.type === 'create-party') {
+            Object.assign(room, { persistent: true, title: partyTitle(message.partyName), createdAt: Date.now() });
+            try { persistParty(room); }
+            catch { fail(ws, 'PARTY_SAVE_FAILED', 'The party could not be saved. Check free disk space and try again.'); return; }
+          }
           role = 'host';
           rooms.set(id, room);
         } else {
@@ -255,6 +341,9 @@ async function createTogetherServer(options = {}) {
             return;
           }
           if (room.members.size >= maxMembers) { fail(ws, 'ROOM_FULL', `This room is limited to ${maxMembers} people.`); return; }
+          if (room.persistent && !room.members.size) {
+            role = 'host'; room.hostId = crypto.randomUUID();
+          }
         }
         member = {
           id: role === 'host' ? room.hostId : crypto.randomUUID(), name: nameOf(message.name), role,
@@ -267,7 +356,28 @@ async function createTogetherServer(options = {}) {
       }
       if (!member?.room) { fail(ws, 'NOT_JOINED', 'Create or join a room first.'); return; }
       const room = member.room;
-      if (message.type === 'signal') {
+      if (message.type === 'screen-claim') {
+        if (typeof message.requestId !== 'string' || message.requestId.length > 80) { fail(ws, 'BAD_MESSAGE', 'Invalid screen request.'); return; }
+        const sharing = [...room.members.values()].find(person => person.media.screen && person.id !== member.id);
+        if (sharing) {
+          send(ws, { type: 'screen-claim-result', requestId: message.requestId, accepted: false, message: `${sharing.name} is sharing. Ask them to stop before sharing your screen.` }); return;
+        }
+        clearTimeout(member.shareLease);
+        member.media.screen = true; member.media.systemAudio = message.systemAudio === true;
+        member.shareLease = setTimeout(() => {
+          if (!member.room) return;
+          member.media.screen = member.media.systemAudio = false; roster(member.room);
+        }, 15000);
+        member.shareLease.unref?.();
+        send(ws, { type: 'screen-claim-result', requestId: message.requestId, accepted: true });
+        roster(room);
+      } else if (message.type === 'screen-release') {
+        clearTimeout(member.shareLease);
+        member.media.screen = member.media.systemAudio = false; roster(room);
+      } else if (message.type === 'media-retry') {
+        if (typeof message.to !== 'string' || message.to === member.id || !room.members.has(message.to)) { fail(ws, 'INVALID_PEER', 'That person is no longer in the room.'); return; }
+        send(room.members.get(message.to).ws, { type: 'media-retry', from: member.id });
+      } else if (message.type === 'signal') {
         if (typeof message.to !== 'string' || message.to === member.id || !room.members.has(message.to)) {
           fail(ws, 'INVALID_PEER', 'That person is no longer in the room.'); return;
         }
@@ -286,9 +396,10 @@ async function createTogetherServer(options = {}) {
         if (!message.media || typeof message.media !== 'object' || Array.isArray(message.media)) {
           fail(ws, 'BAD_MEDIA', 'Invalid media state.'); return;
         }
-        if (member.role !== 'host' && (message.media.screen === true || message.media.systemAudio === true)) {
-          fail(ws, 'HOST_ONLY', 'Only the host can share the screen.'); return;
+        if (message.media.screen === true && [...room.members.values()].some(person => person.id !== member.id && person.media.screen)) {
+          fail(ws, 'SCREEN_BUSY', 'Someone is already sharing. Ask them to stop before sharing your screen.'); return;
         }
+        if (typeof message.media.screen === 'boolean') clearTimeout(member.shareLease);
         for (const key of Object.keys(EMPTY_MEDIA)) {
           if (typeof message.media[key] === 'boolean') member.media[key] = message.media[key];
         }

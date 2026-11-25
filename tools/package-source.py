@@ -3,7 +3,7 @@ from zipfile import ZipFile, ZIP_DEFLATED
 
 root = Path(__file__).resolve().parent.parent
 directories = ['desktop', 'public', 'assets', 'test', 'tools']
-files = ['package.json', 'package-lock.json', 'server.cjs', 'README.md', 'QUICK-START.md',
+files = ['package.json', 'package-lock.json', 'server.cjs', 'README.md', 'QUICK-START.md', 'PRIVATE-NETWORK.md', 'PARTIES.md', 'SETUP.md',
          'VALIDATION.md', 'LICENSE', 'Dockerfile', 'render.yaml', 'playwright.config.cjs',
          '.env.example', '.gitignore', '.dockerignore', '.npmrc', 'vendor/CLOUDFLARED-LICENSE',
          'vendor/CLOUDFLARED-VERSION.json']

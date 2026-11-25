@@ -115,6 +115,37 @@ async function expectInbound(page, peerId, slots) {
   }, { id: peerId, wanted: slots }), { timeout: 25000, message: `Real received RTP for peer ${peerId}, slots ${slots.join(',')}` }).toBe(true);
 }
 
+test('a constrained stream lowers encoded detail while screen audio and conversation stay connected', async ({ browser }) => {
+  test.setTimeout(60000);
+  const context = await browser.newContext({ permissions: ['camera', 'microphone'] });
+  const host = await context.newPage(), guest = await context.newPage();
+  try {
+    await bootstrap(host, 'Adaptive presenter'); await bootstrap(guest, 'Adaptive viewer');
+    const welcome = await host.evaluate(() => window.e.createParty('Adaptive test party'));
+    await guest.evaluate(code => window.e.join(code), welcome.code);
+    await enableConversation(host); await enableConversation(guest);
+    await host.evaluate(() => window.e.updateSettings({ fps: 60, resolution: 0, bitrate: 1, mode: 'smooth' }));
+    await startSyntheticScreen(host);
+    await host.evaluate(() => { window.syntheticCanvas.width = 1920; window.syntheticCanvas.height = 1080; });
+    await expectInbound(guest, welcome.selfId, [0, 1, 2, 3]);
+    await expect.poll(() => guest.evaluate(async id => (await window.inboundRows()).find(row => row.peerId === id && row.mid === '0')?.height || 9999, welcome.selfId),
+      { timeout: 30000, message: 'Real received frames should follow the adaptive sender resolution' }).toBeLessThanOrEqual(540);
+    const before = await guest.evaluate(async () => window.inboundRows());
+    await guest.waitForTimeout(1500);
+    const after = await guest.evaluate(async () => window.inboundRows());
+    for (const mid of ['0', '1', '2', '3']) {
+      const old = before.find(row => row.peerId === welcome.selfId && row.mid === mid);
+      const next = after.find(row => row.peerId === welcome.selfId && row.mid === mid);
+      expect(next.bytes).toBeGreaterThan(old.bytes);
+      if (mid === '0') expect(next.frames).toBeGreaterThan(old.frames);
+    }
+    expect(await host.evaluate(() => window.e.screenStream.getVideoTracks()[0].getSettings().width)).toBe(1920);
+  } finally {
+    for (const page of [host, guest]) await page.evaluate(() => { window.e?.close(); clearInterval(window.syntheticTimer); void window.syntheticAudio?.close(); }).catch(() => {});
+    await context.close();
+  }
+});
+
 test('meeting code, real screen/audio, two-way cameras/mics, late join, toggles, and cleanup', async ({ browser }, testInfo) => {
   test.setTimeout(120000);
   const context = await browser.newContext({ permissions: ['camera', 'microphone'] });
@@ -133,12 +164,20 @@ test('meeting code, real screen/audio, two-way cameras/mics, late join, toggles,
       expectInbound(host, joined.selfId, [2, 3]),
     ]);
     await expect.poll(() => guest.evaluate(() => window.engineStreams.screen?.getTracks().length || 0)).toBe(2);
+    const beforeRestart = await host.evaluate(id => ({
+      ufrag: window.e._peers.get(id).pc.localDescription.sdp.match(/a=ice-ufrag:([^\r\n]+)/)[1],
+      tracks: window.e.screenStream.getTracks().map(track => track.id),
+    }), joined.selfId);
+    await host.evaluate(id => window.e._scheduleMediaRetry(window.e._peers.get(id), true), joined.selfId);
+    await expect.poll(() => host.evaluate(id => window.e._peers.get(id).pc.localDescription.sdp.match(/a=ice-ufrag:([^\r\n]+)/)[1], joined.selfId), { timeout: 15000 }).not.toBe(beforeRestart.ufrag);
+    await expectInbound(guest, welcome.selfId, [0, 1, 2, 3]);
+    expect(await host.evaluate(() => window.e.screenStream.getTracks().map(track => track.id))).toEqual(beforeRestart.tracks);
     await expect.poll(() => guest.evaluate(id => window.engineStreams.participants[id]?.getTracks().length || 0, welcome.selfId)).toBe(2);
     await expect.poll(() => guest.evaluate(async id => {
       const row = (await window.inboundRows()).find(row => row.peerId === id && row.mid === '0');
       return row ? `${row.width}x${row.height}` : '';
     }, welcome.selfId)).toBe('640x360');
-    await host.evaluate(() => window.e.updateSettings({ resolution: 0, bitrate: 0 }));
+    await host.evaluate(() => window.e.updateSettings({ resolution: 0, bitrate: 0, mode: 'source' }));
     expect(await host.evaluate(() => [...window.e._peers.values()].every(peer => peer.transceivers[0].sender.getParameters().encodings.every(encoding => encoding.maxBitrate === undefined)))).toBe(true);
 
     const originalTracks = await guest.evaluate(() => ({
@@ -212,6 +251,22 @@ test('meeting code, real screen/audio, two-way cameras/mics, late join, toggles,
     });
     await expect.poll(() => guest.evaluate(() => window.engineStreams.screen === null)).toBe(true);
     expect(await host.evaluate(() => window.savedScreenTracks.every(track => track.readyState === 'ended'))).toBe(true);
+    // The guest becomes presenter without changing the room or its host.
+    await startSyntheticScreen(guest);
+    await Promise.all([expectInbound(host, joined.selfId, [0, 1]), expectInbound(lateGuest, joined.selfId, [0, 1])]);
+    await expect.poll(() => host.evaluate(() => window.e.presenterId)).toBe(joined.selfId);
+    await expect.poll(() => host.evaluate(() => window.fpsSamples.at(-1)?.kind)).toBe('receiving');
+    await expect.poll(() => guest.evaluate(() => window.fpsSamples.at(-1)?.kind)).toBe('sending');
+    const guestViewer = await context.newPage();
+    await bootstrap(guestViewer, 'Viewer of guest presenter');
+    await guestViewer.evaluate(code => window.e.join(code), welcome.code);
+    await expectInbound(guestViewer, joined.selfId, [0, 1]);
+    await expect.poll(() => guestViewer.evaluate(() => window.e.presenterId)).toBe(joined.selfId);
+    await guestViewer.evaluate(() => window.e.close()); await guestViewer.close();
+    await expect(startSyntheticScreen(host)).rejects.toThrow(/sharing/);
+    await guest.evaluate(() => window.e.setScreen(null));
+    expect(await guest.evaluate(() => [...window.e.cameraStream.getTracks(), ...window.e.microphoneStream.getTracks()].every(track => track.readyState === 'live'))).toBe(true);
+    await expect.poll(() => host.evaluate(() => window.e.presenterId)).toBe(null);
     // Replacing the already-negotiated tracks must resume without rejoining.
     await startSyntheticScreen(host);
     await expect.poll(() => guest.evaluate(() => Boolean(window.engineStreams.screen?.getVideoTracks().length))).toBe(true);

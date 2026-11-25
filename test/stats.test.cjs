@@ -4,6 +4,31 @@ const fs = require('node:fs');
 const path = require('node:path');
 const engineModule = import('data:text/javascript;base64,' + fs.readFileSync(path.join(__dirname, '../public/engine.js')).toString('base64'));
 
+test('camera packet loss cannot degrade the screen sender; current screen loss can', async () => {
+  const f = await fixture();
+  const viewer = f.addPeer('viewer'); const peer = viewer.peer;
+  peer.chain = Promise.resolve();
+  const pcReports = peer.pc.getStats, senderReports = peer.transceivers[0].sender.getStats;
+  let tick = 0, screenLost = false;
+  peer.pc.getStats = async () => {
+    const rows = await pcReports();
+    rows.set('screen-rtcp', { id: 'screen-rtcp', type: 'remote-inbound-rtp', kind: 'video', localId: 'viewer-video', timestamp: tick * 1000, packetsLost: screenLost ? tick * 10 : 0 });
+    rows.set('camera-rtcp', { id: 'camera-rtcp', type: 'remote-inbound-rtp', kind: 'video', localId: 'camera-video', timestamp: tick * 1000, packetsLost: tick * 100 });
+    return rows;
+  };
+  peer.transceivers[0].sender.getStats = async () => {
+    const rows = await senderReports();
+    rows.get('viewer-video').packetsSent = tick * 100;
+    rows.set('camera-video', { id: 'camera-video', type: 'outbound-rtp', kind: 'video', mid: '2', packetsSent: tick * 100 });
+    return rows;
+  };
+  for (let i = 0; i < 5; i++) { tick++; viewer.advance(); await f.collect(); }
+  assert.equal(peer.adaptation.level, 0);
+  screenLost = true;
+  for (let i = 0; i < 3; i++) { tick++; viewer.advance(); await f.collect(); }
+  assert.equal(peer.adaptation.level, 1);
+});
+
 async function fixture({ receiving = false } = {}) {
   const { MeetingEngine } = await engineModule;
   const events = [];

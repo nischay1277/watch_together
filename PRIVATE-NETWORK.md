@@ -1,0 +1,21 @@
+For the integrated first-time installer, sign-in, network selector and combined party invitation, follow [SETUP.md](SETUP.md). Windows and browser approvals still require you.
+
+# Free private-network setup for Together 1.3.0
+
+This route is for two or more people using the Together Windows app. It avoids needing a public TURN subscription. It still requires both PCs to be online, joined to the same private network, and allowed to communicate by their firewall and network policies.
+
+1. On both PCs, install [Tailscale for Windows](https://tailscale.com/docs/install/windows). Choose the **Personal** plan. It is currently free for up to six users; see [Tailscale pricing](https://tailscale.com/pricing). Together does not sign up for, upgrade, or manage billing on that account.
+2. One person creates the private network, then [invites the friend](https://tailscale.com/docs/features/sharing/how-to/invite-any-user). Each person uses their own login. In the Tailscale client, select the SAME private network on both PCs, rather than leaving each PC in a separate personal network. Only invite people and add devices you trust.
+3. Keep Tailscale connected on both PCs. Check its device list to confirm the other PC is present. On the hosting PC, allow incoming connections in Tailscale and allow Together through Windows Firewall when prompted. Do not disable the firewall.
+4. Open **Together 1.3.0** on both PCs. Keep its EXE and Together-data folder on D: if that is where you want its application data. The original room creator must use the new version too; browser clients refresh the new server page.
+5. Together checks the installed Tailscale background connection automatically. If needed, click **Connect private network** or **Check again** inside Together. A connected private adapter is chosen automatically for new invites. First-time installation and browser sign-in still require you.
+6. Create a named party (recommended for reuse), or a temporary room, and click **Copy code**. The private meeting code starts with an address like `http://100.x.x.x:port/#code=...`. Send the ENTIRE code privately to your friend. It contains the room credential.
+7. Your friend pastes that full code into the Together DESKTOP app, enters a name, and clicks Join. The hosting PC must keep Together running. **Start internet room is not needed** for this private route.
+8. Either participant can now click **Share screen**. Only one screen is active at a time: the current presenter clicks Stop sharing before the other starts. Screen audio, camera, and microphone still require their own user choices.
+9. For an interrupted media link, Together automatically retries ICE with a bounded backoff. You can also click **Reconnect media** after checking the private network. The connection details identify a selected private-network route when its candidate address is in the shared private range. Devices are not reopened automatically during retries.
+
+If it still cannot connect, verify that both devices are in the SAME private network, the host is running, incoming connections are allowed, and the invite is current. A failed signaling connection to the private address is reported separately from a failed media connection. Together cannot bypass an offline PC, a denied firewall rule, or a private-network access policy.
+
+No paid relay, cloud encoder, or usage-based server was configured by this update. Your usual internet data allowance still applies. Network paths and relay performance can vary; no fixed FPS or universal connection success is guaranteed. This connectivity feature does not repair the separate Windows browser-window capture FPS limitation described in VALIDATION.md.
+
+For a D:-based Tailscale program installation, its official [MSI instructions](https://tailscale.com/docs/install/windows/msi) document the `INSTALLDIR` property. Download the correct x64 MSI to D: and, from an administrator terminal, use `msiexec /i "D:\path\to\tailscale.msi" INSTALLDIR="D:\Tailscale"`. Windows installation records, drivers, and third-party state can still use the system drive; Together does not relocate those files. No Tailscale installation or account login was performed automatically.

@@ -1,18 +1,28 @@
 # Together
 
+**Stack:** JavaScript, Node.js, Electron, WebRTC, WebSocket, Playwright.
+
+**Demo:** Share one screen in a temporary room or saved party, hand off presenting, and inspect measured frame rate, codec, and connection route. Start with [the source setup](QUICK-START.md) and see [validation](VALIDATION.md) for the conditions behind each measurement.
+
 A Windows desktop app for watching a shared screen with friends while talking on camera and microphone. Includes a browser viewer and a self-hostable signaling server. No screen, camera, or microphone is enabled just by joining.
+
+For the integrated first-time installer, sign-in, network selector and combined party invitation, follow [SETUP.md](SETUP.md). Windows and browser approvals still require you.
+
+## Friend parties and simpler connections
+
+Version 1.3 adds named saved parties, authenticated presence cards and one-click rejoining. Together checks an installed Tailscale background service automatically and can reconnect it from its own network panel. First-time installation and sign-in are still required. Smooth motion and Balanced streaming modes adapt each viewer separately for weaker internet; Source detail keeps the original targets. See [PARTIES.md](PARTIES.md) for setup and limits.
 
 ## Run the Windows app
 
-Keep `release/Together-1.1.2-Windows.exe` on D: and open it. The launcher extracts the app into `Together-data/Runtime` beside the EXE, then reuses that copy on later launches. Profiles, browser caches, logs, and temporary files also stay in `Together-data` beside the EXE. Close the old version first. You can send just this EXE to friends; it creates its own data folder on their chosen drive.
+Keep `release/Together-1.4.0-Windows.exe` on D: and open it. The launcher extracts the app into `Together-data/Runtime` beside the EXE, then reuses that copy on later launches. Profiles, browser caches, logs, and temporary files also stay in `Together-data` beside the EXE. Close the old version first. You can send just this EXE to friends; it creates its own data folder on their chosen drive.
 
 This portable build needs no installer or separate Node installation. The Windows launcher uses .NET Framework 4.x, included with Windows 11; see [Microsoft's included .NET versions](https://learn.microsoft.com/en-us/dotnet/framework/install/on-windows-10). Windows may identify the unsigned application as unrecognized; a commercial distribution should be code signed.
 
 1. Enter your name and choose **Create a room**.
 2. Choose **Copy code** and send the entire code to your friends. It includes the server address and a private room credential. Keep it private.
 3. Each friend opens Together, enters their name, pastes that code, and chooses **Join**. Opening an invite link also works in a current browser.
-4. The host chooses **Share screen**, then selects a screen or window. **Share computer sound** includes system audio. Camera and microphone have their own on/off buttons for every person in the room.
-5. Stop sharing to end only the screen stream. Leaving as host ends the room for everyone and stops every participant's devices.
+4. Any participant chooses **Share screen**, then selects a screen or window. **Share computer sound** includes system audio. Camera and microphone have their own on/off buttons for every person in the room.
+5. Stop sharing to end only the screen stream. In a temporary room, leaving as host ends the room; persistent friend parties stay available while the server PC keeps Together open.
 
 The source picker opens on **Entire screen · all apps**, which shares a complete monitor, including all browsers and applications on it. **One application window** limits sharing to one window. The fullscreen button and double-clicking the stream enlarge the viewer; **F** toggles fullscreen and **Esc** exits it.
 
@@ -44,13 +54,13 @@ These are targets, not a guarantee of more than 100 FPS. The source animation, d
 
 The quality panel distinguishes the requested target, actual capture size, and encoded/received size. Changing quality while sharing applies capture constraints and sender limits immediately. A 1920 × 1080 display or a 1920 × 1020 browser window cannot supply true 3840 × 2160 detail: selecting 4K does not invent missing pixels. For true 4K screen capture, choose a source that actually renders at 4K. Fullscreen enlarges the picture without adding source detail.
 
-The live panel measures encoded/decoded screen frames from WebRTC counters. The host sees the lowest measured frame rate across connected viewers and total screen-video bitrate across them; a viewer sees its own received stream. Failed connections and inactive RTP reports are excluded from that counter. A failed media path is shown as unavailable rather than zero measured FPS. RTT is the peer connection's round-trip time, not a measurement of end-to-end video delay. No target value is presented as measured FPS. With no viewer or no available RTP samples, frame rate is shown as a dash.
+The live panel measures encoded/decoded screen frames from WebRTC counters. The person sharing sees the lowest measured frame rate across connected viewers and total screen-video bitrate across them; a viewer sees its own received stream. Failed connections and inactive RTP reports are excluded from that counter. A failed media path is shown as unavailable rather than zero measured FPS. RTT is the peer connection's round-trip time, not a measurement of end-to-end video delay. No target value is presented as measured FPS. With no viewer or no available RTP samples, frame rate is shown as a dash.
 
 Open **Video and connection details** below the stream to diagnose a real frame-rate drop. On the host, compare capture input, encoded FPS, and sent FPS. On a viewer, compare received frames with decoded FPS. The panel also shows each connection's stream dimensions, codec, encoder/decoder implementation when exposed, average frame processing time, RTT, network bandwidth estimate, quality-limitation reason, and direct/relay route. Unsupported measurements appear as a dash. No IP addresses or TURN credentials are included in this panel.
 
 Low capture input while a video is moving points to capture/source rendering; a large drop between capture input and encoding points toward the encoder or its delivery constraints. A host sending normally with fewer received frames requires checking the media path; frames arriving without decoding point toward the viewer decoder. These readings locate the stage to investigate and do not alone prove one root cause. A low current bitrate does not measure a connection's maximum upload/download capacity, and a moderate RTT does not rule out packet loss or limited throughput. Compare host and viewer readings from the same moving scene. WebRTC reports CPU and bandwidth constraints through its [quality limitation statistics](https://www.w3.org/TR/webrtc-stats/#dom-rtcoutboundrtpstreamstats-qualitylimitationreason).
 
-The architecture is a six-person full mesh (host plus five guests). The host sends a separate screen stream to each viewer. Automatic/native quality can use substantial upload and encoder resources. As an example, five 25 Mbps screen streams require around 125 Mbps of screen-video upload, plus camera/audio/transport overhead. This is intended for small groups rather than broadcast-scale meetings.
+The architecture is a six-person full mesh (host plus five guests). The person sharing sends a separate screen stream to each viewer. Automatic/native quality can use substantial upload and encoder resources. As an example, five 25 Mbps screen streams require around 125 Mbps of screen-video upload, plus camera/audio/transport overhead. This is intended for small groups rather than broadcast-scale meetings.
 
 Validated on November 8, 2026: a real animated Windows test window on a 144 Hz display was encoded and decoded at its full captured size of 1182 × 702 with a 120 FPS target. A controlled run averaged 116.2 FPS; a later run of the final application averaged about 100 FPS with peaks around 107 FPS. Both encoder and viewer ran on the same computer. This verifies high-frame-rate operation for the tested window, and also shows that sustained performance varies. It does not certify 1080p/4K at 120 FPS. The benchmark left system audio, camera, and microphone off. Reproduce with `node tools/native-benchmark.cjs`; actual encoded dimensions, samples, and machine context are in `artifacts/native-webrtc-benchmark.json` and `artifacts/native-webrtc-benchmark-auto-fixed-resolution.json`.
 
@@ -130,3 +140,16 @@ Code locations: `desktop/` is the sandboxed Electron shell and narrow preload br
 Build/test wrappers set temporary files and caches to `.build-temp` and `.cache` inside this project. The source build uses the Electron distribution in `node_modules/electron/dist`, then embeds a ZIP payload in the Windows launcher. `tools/PortableLauncher.cs` is the launcher source. The former NSIS launcher, which extracted to the Windows temporary directory, is no longer used.
 
 Primary technical references: [Electron desktop capture](https://www.electronjs.org/docs/latest/api/desktop-capturer/), [Electron45 own-audio exclusion fix](https://www.electronjs.org/blog/electron-45-0), [WebRTC sender frame-rate and bitrate controls](https://developer.mozilla.org/en-US/docs/Web/API/RTCRtpSender/setParameters).
+
+
+## Anyone can share (1.2.0)
+
+Update the server/hosting PC and all desktop participants to version 1.2.0, then create a fresh room and invite. Browser users refresh the new server page. Any member can click Share screen and choose a monitor, window, or browser tab (where supported), including computer/tab audio. One screen is active at a time: the current presenter clicks Stop sharing before someone else starts. The server rejects simultaneous starts without replacing an existing stream. The person sharing controls its quality; viewers see the stream actually received. Cameras and microphones keep working during handoff. A guest leaving frees the screen; the original room host leaving still ends the room.
+
+This update does not configure a TURN relay or fix failed cross-network media connectivity. The free public tunnel remains signaling only, and no paid service is added.
+
+## Connection recovery and private-network invites
+
+Version 1.2.0 retries failed/disconnected media with bounded ICE restarts, retries after the browser returns online, and provides a Reconnect media button. A participant can request recovery from the peer responsible for negotiation. Healthy peers are kept, camera/microphone/screen choices are preserved, and exhausted attempts explain the remaining network requirement. These changes do not guarantee that a blocked direct route becomes reachable.
+
+The desktop app detects a Tailscale IPv4 adapter and offers Use private-network invites plus Refresh network check. This selects a full HTTP private meeting address for native clients without starting a public tunnel. Private signaling errors explain the same-network requirement. See [the private-network setup guide](PRIVATE-NETWORK.md). Both people must install/connect their own free private-network client and join the same network; no accounts, installations, paid relays, or subscriptions were provisioned automatically.
